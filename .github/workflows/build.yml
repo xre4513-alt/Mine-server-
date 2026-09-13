@@ -1,5 +1,4 @@
-
-​name: Build Minecraft Bedrock Server Host APK
+name: Build Minecraft Bedrock Server Host APK
 ​on:
 push:
 branches:
@@ -11,23 +10,19 @@ build-apk:
 name: Auto-Generate Project and Build APK
 runs-on: ubuntu-latest
 ​steps:
-# STREAMING_CHUNK:Checking out repository source code...
 - name: Checkout Repository
 uses: actions/checkout@v4
-​# STREAMING_CHUNK:Setting up Java JDK environment...
-- name: Set up Java JDK 17
+​- name: Set up Java JDK 17
 uses: actions/setup-java@v4
 with:
 distribution: 'zulu'
 java-version: '17'
-​# STREAMING_CHUNK:Setting up Flutter framework...
-- name: Set up Flutter SDK
+​- name: Set up Flutter SDK
 uses: subosito/flutter-action@v2
 with:
 channel: 'stable'
 cache: true
-​# STREAMING_CHUNK:Creating Flutter project structure automatically...
-- name: Initialize Flutter Project Structure
+​- name: Initialize Flutter Project Structure
 run: |
 mkdir -p lib
 cat << 'EOF' > pubspec.yaml
@@ -48,8 +43,7 @@ flutter_lints: ^3.0.0
 ​flutter:
 uses-material-design: true
 EOF
-​# STREAMING_CHUNK:Generating complete Flutter Dart application code...
-- name: Generate Application Code (lib/main.dart)
+​- name: Generate Application Code
 run: |
 cat << 'EOF' > lib/main.dart
 import 'dart:async';
@@ -309,7 +303,7 @@ child: _buildInfoTile("Port", isOnline ? "_port" : "---", Icons.numbers, isOnlin
 if (isOnline) ...[
 const SizedBox(height: 12),
 ElevatedButton.icon(
-style: ElevatedButton.styleFrom(
+style: ElevatedButton.icon styleFrom(
 backgroundColor: const Color(0xFF8B5CF6),
 foregroundColor: Colors.white,
 minimumSize: const Size(double.infinity, 44),
@@ -479,7 +473,7 @@ builder: (context) {
 return Padding(
 padding: const EdgeInsets.all(20.0),
 child: Column(
-mainAxisSize: MainAxisSize.min,
+mainAxisSize: MinAxisSize.min,
 crossAxisAlignment: CrossAxisAlignment.start,
 children: [
 const Text("Server Configuration", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -507,14 +501,11 @@ trailing: const Icon(Icons.check_circle, color: Color(0xFF10B981)),
 }
 }
 EOF
-​# STREAMING_CHUNK:Installing project dependencies...
-- name: Get Dependencies
+​- name: Get Dependencies
 run: flutter pub get
-​# STREAMING_CHUNK:Building Android release APK...
-- name: Build Release APK
+​- name: Build Release APK
 run: flutter build apk --release --no-tree-shake-icons
-​# STREAMING_CHUNK:Uploading built APK artifact...
-- name: Upload APK Artifact
+​- name: Upload APK Artifact
 uses: actions/upload-artifact@v4
 with:
 name: Minecraft-Bedrock-Server-Host-v1.26
