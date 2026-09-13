@@ -28,9 +28,12 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Initialize Flutter Project Structure
+      # YEH NAYA STEP ADD KIYA HAI (Android folder banane ke liye)
+      - name: Create Flutter Project Scaffolding
+        run: flutter create --project-name mc_pocket_host --org com.mcserver .
+
+      - name: Overwrite pubspec.yaml
         run: |
-          mkdir -p lib
           cat << 'EOF' > pubspec.yaml
           name: mc_pocket_host
           description: "Minecraft Bedrock 1.26+ Server Host Mobile Launcher"
@@ -55,7 +58,7 @@ jobs:
             uses-material-design: true
           EOF
 
-      - name: Generate Application Code
+      - name: Overwrite Application Code (main.dart)
         run: |
           cat << 'EOF' > lib/main.dart
           import 'dart:async';
