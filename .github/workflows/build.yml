@@ -61,6 +61,7 @@ jobs:
         run: |
           cat << 'EOF' > lib/main.dart
           import 'dart:async';
+          import 'dart:isolate'; // YEH NAYI LINE ADD KI HAI
           import 'dart:math';
           import 'package:flutter/material.dart';
           import 'package:flutter/services.dart';
