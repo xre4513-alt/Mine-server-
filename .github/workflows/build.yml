@@ -28,7 +28,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # YEH NAYA STEP ADD KIYA HAI (Android folder banane ke liye)
       - name: Create Flutter Project Scaffolding
         run: flutter create --project-name mc_pocket_host --org com.mcserver .
 
@@ -47,7 +46,7 @@ jobs:
             flutter:
               sdk: flutter
             cupertino_icons: ^1.0.6
-            flutter_foreground_task: ^6.0.0
+            flutter_foreground_task: ^6.5.0
 
           dev_dependencies:
             flutter_test:
@@ -76,12 +75,12 @@ jobs:
             int _counter = 0;
 
             @override
-            Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+            Future<void> onStart(DateTime timestamp, dynamic starter) async {
               print('Foreground task started.');
             }
 
             @override
-            void onRepeatEvent(DateTime timestamp) {
+            void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {
               _counter++;
               FlutterForegroundTask.updateService(
                 notificationTitle: 'Minecraft Server Running',
@@ -90,7 +89,7 @@ jobs:
             }
 
             @override
-            Future<void> onDestroy(DateTime timestamp) async {
+            Future<void> onDestroy(DateTime timestamp, SendPort? sendPort) async {
               print('Foreground task stopped.');
             }
           }
@@ -106,8 +105,7 @@ jobs:
                 priority: NotificationPriority.LOW,
               ),
               iosNotificationOptions: const IOSNotificationOptions(),
-              foregroundTaskOptions: ForegroundTaskOptions(
-                eventAction: ForegroundTaskEventAction.repeat(5000),
+              foregroundTaskOptions: const ForegroundTaskOptions(
                 autoRunOnBoot: false,
                 allowWakeLock: true,
                 allowWifiLock: true,
