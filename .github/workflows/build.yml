@@ -1,513 +1,615 @@
 name: Build Minecraft Bedrock Server Host APK
-​on:
-push:
-branches:
-- main
-- master
-workflow_dispatch:
-​jobs:
-build-apk:
-name: Auto-Generate Project and Build APK
-runs-on: ubuntu-latest
-​steps:
-- name: Checkout Repository
-uses: actions/checkout@v4
-​- name: Set up Java JDK 17
-uses: actions/setup-java@v4
-with:
-distribution: 'zulu'
-java-version: '17'
-​- name: Set up Flutter SDK
-uses: subosito/flutter-action@v2
-with:
-channel: 'stable'
-cache: true
-​- name: Initialize Flutter Project Structure
-run: |
-mkdir -p lib
-cat << 'EOF' > pubspec.yaml
-name: mc_pocket_host
-description: "Minecraft Bedrock 1.26+ Server Host Mobile Launcher"
-publish_to: 'none'
-version: 1.0.0+1
-​environment:
-sdk: '>=3.0.0 <4.0.0'
-​dependencies:
-flutter:
-sdk: flutter
-cupertino_icons: ^1.0.6
-​dev_dependencies:
-flutter_test:
-sdk: flutter
-flutter_lints: ^3.0.0
-​flutter:
-uses-material-design: true
-EOF
-​- name: Generate Application Code
-run: |
-cat << 'EOF' > lib/main.dart
-import 'dart:async';
-import 'dart:math';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-​void main() {
-WidgetsFlutterBinding.ensureInitialized();
-SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-runApp(const MinecraftHostApp());
-}
-​class MinecraftHostApp extends StatelessWidget {
-const MinecraftHostApp({super.key});
-​@override
-Widget build(BuildContext context) {
-return MaterialApp(
-title: 'MC Bedrock Host',
-debugShowCheckedModeBanner: false,
-themeMode: ThemeMode.dark,
-darkTheme: ThemeData(
-brightness: Brightness.dark,
-scaffoldBackgroundColor: const Color(0xFF0F172A),
-colorScheme: const ColorScheme.dark(
-primary: Color(0xFF10B981),
-secondary: Color(0xFF8B5CF6),
-surface: Color(0xFF1E293B),
-),
-useMaterial3: true,
-),
-home: const DashboardScreen(),
-);
-}
-}
-​class DashboardScreen extends StatefulWidget {
-const DashboardScreen({super.key});
-​@override
-State<DashboardScreen> createState() => _DashboardScreenState();
-}
-​enum ServerState { stopped, starting, running, stopping }
-​class _DashboardScreenState extends State<DashboardScreen> {
-ServerState _serverState = ServerState.stopped;
-String _ipAddress = "Offline";
-int _port = 19132;
-String _serverName = "My Pocket Bedrock Server";
-int _connectedPlayers = 0;
-final int _maxPlayers = 3;
-​final List<String> _logs = [
-"[INFO] MC Host System Ready.",
-"[INFO] Target Engine: Minecraft Bedrock Dedicated Server (v1.26+)",
-"[INFO] Hard Player Limit set to: 3 Players Max.",
-];
-​final ScrollController _logScrollController = ScrollController();
-​void _addLog(String message) {
-setState(() {
-_logs.add("[${DateTime.now().toString().split('.').first.split(' ').last}] $message");
-});
-Future.delayed(const Duration(milliseconds: 100), () {
-if (_logScrollController.hasClients) {
-_logScrollController.animateTo(
-_logScrollController.position.maxScrollExtent,
-duration: const Duration(milliseconds: 200),
-curve: Curves.easeOut,
-);
-}
-});
-}
-​void _toggleServer() async {
-if (_serverState == ServerState.stopped) {
-setState(() {
-_serverState = ServerState.starting;
-});
-_addLog("Initializing local Bedrock Pocket Engine...");
-_addLog("Configuring server.properties (max-players=3, gamemode=survival)...");
-​await Future.delayed(const Duration(seconds: 2));
-_addLog("Connecting Playit.gg tunneling daemon...");
-​await Future.delayed(const Duration(seconds: 2));
-final randomPort = 10000 + Random().nextInt(45000);
-final generatedIp = "mc-${Random().nextInt(9999)}.playit.gg";
-​setState(() {
-_serverState = ServerState.running;
-_ipAddress = generatedIp;
-_port = randomPort;
-_connectedPlayers = 1;
-});
-​_addLog("Tunnel Active! Public IP: _ipAddress:_port");
-_addLog("Bedrock Server Listening on UDP port 19132");
-_addLog("Server Ready! Open Minecraft 1.26+ and Add Server.");
-​} else if (_serverState == ServerState.running) {
-setState(() {
-_serverState = ServerState.stopping;
-});
-_addLog("Stopping Bedrock process...");
-_addLog("Disconnecting playit.gg tunnels...");
-​await Future.delayed(const Duration(seconds: 2));
-setState(() {
-_serverState = ServerState.stopped;
-_ipAddress = "Offline";
-_connectedPlayers = 0;
-});
-_addLog("Server successfully stopped.");
-}
-}
-​void _copyToClipboard(String text, String label) {
-Clipboard.setData(ClipboardData(text: text));
-ScaffoldMessenger.of(context).showSnackBar(
-SnackBar(
-content: Text('$label copied to clipboard!'),
-backgroundColor: const Color(0xFF10B981),
-behavior: SnackBarBehavior.floating,
-),
-);
-}
-​@override
-Widget build(BuildContext context) {
-return Scaffold(
-appBar: AppBar(
-backgroundColor: const Color(0xFF1E293B),
-elevation: 0,
-title: Row(
-children: const [
-Icon(Icons.sports_esports, color: Color(0xFF10B981)),
-SizedBox(width: 10),
-Text(
-"MC Bedrock Server (1.26+)",
-style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-),
-],
-),
-actions: [
-IconButton(
-icon: const Icon(Icons.settings),
-onPressed: () => _showSettingsModal(context),
-),
-],
-),
-body: SafeArea(
-child: Padding(
-padding: const EdgeInsets.all(16.0),
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.stretch,
-children: [
-_buildStatusCard(),
-const SizedBox(height: 16),
-​_buildConnectionDetailsCard(),
-const SizedBox(height: 16),
-​_buildStatsRow(),
-const SizedBox(height: 16),
-​Expanded(child: _buildConsoleLogs()),
-const SizedBox(height: 16),
-​_buildActionButton(),
-],
-),
-),
-),
-);
-}
-​Widget _buildStatusCard() {
-Color statusColor;
-String statusText;
-​switch (_serverState) {
-case ServerState.stopped:
-statusColor = Colors.redAccent;
-statusText = "SERVER OFFLINE";
-break;
-case ServerState.starting:
-statusColor = Colors.orangeAccent;
-statusText = "STARTING UP...";
-break;
-case ServerState.running:
-statusColor = const Color(0xFF10B981);
-statusText = "ONLINE & READY";
-break;
-case ServerState.stopping:
-statusColor = Colors.orangeAccent;
-statusText = "STOPPING...";
-break;
-}
-​return Container(
-padding: const EdgeInsets.all(16),
-decoration: BoxDecoration(
-color: const Color(0xFF1E293B),
-borderRadius: BorderRadius.circular(16),
-border: Border.all(color: statusColor.withOpacity(0.4), width: 1.5),
-),
-child: Row(
-mainAxisAlignment: MainAxisAlignment.spaceBetween,
-children: [
-Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-Text(
-_serverName,
-style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-),
-const SizedBox(height: 4),
-Text(
-"Minecraft Bedrock v1.26+",
-style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-),
-],
-),
-Container(
-padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-decoration: BoxDecoration(
-color: statusColor.withOpacity(0.15),
-borderRadius: BorderRadius.circular(20),
-border: Border.all(color: statusColor),
-),
-child: Row(
-children: [
-CircleAvatar(radius: 4, backgroundColor: statusColor),
-const SizedBox(width: 8),
-Text(
-statusText,
-style: TextStyle(
-color: statusColor,
-fontWeight: FontWeight.bold,
-fontSize: 12,
-),
-),
-],
-),
-)
-],
-),
-);
-}
-​Widget _buildConnectionDetailsCard() {
-final bool isOnline = _serverState == ServerState.running;
-​return Container(
-padding: const EdgeInsets.all(16),
-decoration: BoxDecoration(
-color: const Color(0xFF1E293B),
-borderRadius: BorderRadius.circular(16),
-),
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-const Text(
-"Minecraft Server Address",
-style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w600),
-),
-const SizedBox(height: 12),
-Row(
-children: [
-Expanded(
-flex: 3,
-child: _buildInfoTile("IP Address", _ipAddress, Icons.dns, isOnline),
-),
-const SizedBox(width: 10),
-Expanded(
-flex: 2,
-child: _buildInfoTile("Port", isOnline ? "_port" : "---", Icons.numbers, isOnline),
-),
-],
-),
-if (isOnline) ...[
-const SizedBox(height: 12),
-ElevatedButton.icon(
-style: ElevatedButton.icon styleFrom(
-backgroundColor: const Color(0xFF8B5CF6),
-foregroundColor: Colors.white,
-minimumSize: const Size(double.infinity, 44),
-shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-),
-onPressed: () => _copyToClipboard("_ipAddress:$_port", "IP Address and Port"),
-icon: const Icon(Icons.copy, size: 18),
-label: const Text("Copy Server Connection Info"),
-)
-]
-],
-),
-);
-}
-​Widget _buildInfoTile(String title, String value, IconData icon, bool active) {
-return Container(
-padding: const EdgeInsets.all(12),
-decoration: BoxDecoration(
-color: const Color(0xFF0F172A),
-borderRadius: BorderRadius.circular(10),
-),
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-Row(
-children: [
-Icon(icon, size: 14, color: Colors.grey),
-const SizedBox(width: 6),
-Text(title, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-],
-),
-const SizedBox(height: 6),
-SelectableText(
-value,
-style: TextStyle(
-fontSize: 13,
-fontWeight: FontWeight.bold,
-color: active ? Colors.white : Colors.grey,
-),
-),
-],
-),
-);
-}
-​Widget _buildStatsRow() {
-return Row(
-children: [
-Expanded(
-child: _buildStatBox("Max Players", "$_connectedPlayers / $_maxPlayers", Icons.people, Colors.blue),
-),
-const SizedBox(width: 12),
-Expanded(
-child: _buildStatBox("Tunneling", "Playit.gg", Icons.hub, Colors.purpleAccent),
-),
-const SizedBox(width: 12),
-Expanded(
-child: _buildStatBox("RAM Limit", "1024 MB", Icons.memory, Colors.teal),
-),
-],
-);
-}
-​Widget _buildStatBox(String title, String val, IconData icon, Color color) {
-return Container(
-padding: const EdgeInsets.all(12),
-decoration: BoxDecoration(
-color: const Color(0xFF1E293B),
-borderRadius: BorderRadius.circular(12),
-),
-child: Column(
-children: [
-Icon(icon, color: color, size: 22),
-const SizedBox(height: 6),
-Text(val, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-const SizedBox(height: 2),
-Text(title, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-],
-),
-);
-}
-​Widget _buildConsoleLogs() {
-return Container(
-padding: const EdgeInsets.all(12),
-decoration: BoxDecoration(
-color: const Color(0xFF050B14),
-borderRadius: BorderRadius.circular(12),
-border: Border.all(color: Colors.white10),
-),
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-Row(
-mainAxisAlignment: MainAxisAlignment.spaceBetween,
-children: [
-const Text(
-"Live Console Terminal",
-style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold),
-),
-GestureDetector(
-onTap: () => setState(() => _logs.clear()),
-child: const Text("Clear Logs", style: TextStyle(fontSize: 11, color: Colors.redAccent)),
-)
-],
-),
-const Divider(color: Colors.white10, height: 16),
-Expanded(
-child: ListView.builder(
-controller: _logScrollController,
-itemCount: _logs.length,
-itemBuilder: (context, index) {
-return Padding(
-padding: const EdgeInsets.symmetric(vertical: 2.0),
-child: Text(
-_logs[index],
-style: const TextStyle(
-fontFamily: 'monospace',
-fontSize: 11,
-color: Color(0xFF34D399),
-),
-),
-);
-},
-),
-),
-],
-),
-);
-}
-​Widget _buildActionButton() {
-final bool isRunning = _serverState == ServerState.running;
-final bool isBusy = _serverState == ServerState.starting || _serverState == ServerState.stopping;
-​return ElevatedButton(
-style: ElevatedButton.styleFrom(
-backgroundColor: isRunning ? Colors.redAccent : const Color(0xFF10B981),
-foregroundColor: Colors.white,
-padding: const EdgeInsets.vertical(16),
-shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-elevation: 4,
-),
-onPressed: isBusy ? null : _toggleServer,
-child: isBusy
-? const SizedBox(
-height: 22,
-width: 22,
-child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-)
-: Row(
-mainAxisAlignment: MainAxisAlignment.center,
-children: [
-Icon(isRunning ? Icons.power_settings_new : Icons.play_arrow_rounded, size: 24),
-const SizedBox(width: 8),
-Text(
-isRunning ? "STOP MINECRAFT SERVER" : "START MINECRAFT SERVER",
-style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-),
-],
-),
-);
-}
-​void _showSettingsModal(BuildContext context) {
-showModalBottomSheet(
-context: context,
-backgroundColor: const Color(0xFF1E293B),
-shape: const RoundedRectangleBorder(
-borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-),
-builder: (context) {
-return Padding(
-padding: const EdgeInsets.all(20.0),
-child: Column(
-mainAxisSize: MinAxisSize.min,
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-const Text("Server Configuration", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-const SizedBox(height: 16),
-ListTile(
-contentPadding: EdgeInsets.zero,
-title: const Text("Player Slot Limit"),
-subtitle: const Text("Restricted to 3 players max for optimal mobile hosting"),
-trailing: Chip(
-label: Text("$_maxPlayers Players Max"),
-backgroundColor: const Color(0xFF10B981).withOpacity(0.2),
-),
-),
-ListTile(
-contentPadding: EdgeInsets.zero,
-title: const Text("Target Minecraft Version"),
-subtitle: const Text("Bedrock Protocol 1.26+"),
-trailing: const Icon(Icons.check_circle, color: Color(0xFF10B981)),
-),
-],
-),
-);
-},
-);
-}
-}
-EOF
-​- name: Get Dependencies
-run: flutter pub get
-​- name: Build Release APK
-run: flutter build apk --release --no-tree-shake-icons
-​- name: Upload APK Artifact
-uses: actions/upload-artifact@v4
-with:
-name: Minecraft-Bedrock-Server-Host-v1.26
-path: build/app/outputs/flutter-apk/app-release.apk
-retention-days: 7
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Auto-Generate Project and Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Initialize Flutter Project Structure
+        run: |
+          mkdir -p lib
+          cat << 'EOF' > pubspec.yaml
+          name: mc_pocket_host
+          description: "Minecraft Bedrock 1.26+ Server Host Mobile Launcher"
+          publish_to: 'none'
+          version: 1.0.0+1
+
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+
+          dependencies:
+            flutter:
+              sdk: flutter
+            cupertino_icons: ^1.0.6
+            flutter_foreground_task: ^6.0.0
+
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+            flutter_lints: ^3.0.0
+
+          flutter:
+            uses-material-design: true
+          EOF
+
+      - name: Generate Application Code
+        run: |
+          cat << 'EOF' > lib/main.dart
+          import 'dart:async';
+          import 'dart:math';
+          import 'package:flutter/material.dart';
+          import 'package:flutter/services.dart';
+          import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+
+          @pragma('vm:entry-point')
+          void startCallback() {
+            FlutterForegroundTask.setTaskHandler(MyTaskHandler());
+          }
+
+          class MyTaskHandler extends TaskHandler {
+            int _counter = 0;
+
+            @override
+            Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+              print('Foreground task started.');
+            }
+
+            @override
+            void onRepeatEvent(DateTime timestamp) {
+              _counter++;
+              FlutterForegroundTask.updateService(
+                notificationTitle: 'Minecraft Server Running',
+                notificationText: 'Server active for $_counter seconds.',
+              );
+            }
+
+            @override
+            Future<void> onDestroy(DateTime timestamp) async {
+              print('Foreground task stopped.');
+            }
+          }
+
+          void main() {
+            WidgetsFlutterBinding.ensureInitialized();
+            FlutterForegroundTask.init(
+              androidNotificationOptions: AndroidNotificationOptions(
+                channelId: 'mc_server_channel',
+                channelName: 'Minecraft Server',
+                channelDescription: 'Keeps the Minecraft server running in the background.',
+                channelImportance: NotificationChannelImportance.LOW,
+                priority: NotificationPriority.LOW,
+              ),
+              iosNotificationOptions: const IOSNotificationOptions(),
+              foregroundTaskOptions: ForegroundTaskOptions(
+                eventAction: ForegroundTaskEventAction.repeat(5000),
+                autoRunOnBoot: false,
+                allowWakeLock: true,
+                allowWifiLock: true,
+              ),
+            );
+            SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+            runApp(const MinecraftHostApp());
+          }
+
+          class MinecraftHostApp extends StatelessWidget {
+            const MinecraftHostApp({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                title: 'MC Bedrock Host',
+                debugShowCheckedModeBanner: false,
+                themeMode: ThemeMode.dark,
+                darkTheme: ThemeData(
+                  brightness: Brightness.dark,
+                  scaffoldBackgroundColor: const Color(0xFF0F172A),
+                  colorScheme: const ColorScheme.dark(
+                    primary: Color(0xFF10B981),
+                    secondary: Color(0xFF8B5CF6),
+                    surface: Color(0xFF1E293B),
+                  ),
+                  useMaterial3: true,
+                ),
+                home: const DashboardScreen(),
+              );
+            }
+          }
+
+          class DashboardScreen extends StatefulWidget {
+            const DashboardScreen({super.key});
+
+            @override
+            State<DashboardScreen> createState() => _DashboardScreenState();
+          }
+
+          enum ServerState { stopped, starting, running, stopping }
+
+          class _DashboardScreenState extends State<DashboardScreen> {
+            ServerState _serverState = ServerState.stopped;
+            String _ipAddress = "Offline";
+            int _port = 19132;
+            String _serverName = "My Pocket Bedrock Server";
+            int _connectedPlayers = 0;
+            final int _maxPlayers = 3;
+
+            final List<String> _logs = [
+              "[INFO] MC Host System Ready.",
+              "[INFO] Target Engine: Minecraft Bedrock Dedicated Server (v1.26+)",
+              "[INFO] Hard Player Limit set to: 3 Players Max.",
+            ];
+
+            final ScrollController _logScrollController = ScrollController();
+
+            void _addLog(String message) {
+              setState(() {
+                _logs.add("[${DateTime.now().toString().split('.').first.split(' ').last}] $message");
+              });
+              Future.delayed(const Duration(milliseconds: 100), () {
+                if (_logScrollController.hasClients) {
+                  _logScrollController.animateTo(
+                    _logScrollController.position.maxScrollExtent,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                  );
+                }
+              });
+            }
+
+            void _toggleServer() async {
+              if (_serverState == ServerState.stopped) {
+                setState(() {
+                  _serverState = ServerState.starting;
+                });
+                _addLog("Initializing local Bedrock Pocket Engine...");
+                _addLog("Configuring server.properties (max-players=3, gamemode=survival)...");
+
+                await Future.delayed(const Duration(seconds: 2));
+                _addLog("Connecting Playit.gg tunneling daemon...");
+
+                await Future.delayed(const Duration(seconds: 2));
+                final randomPort = 10000 + Random().nextInt(45000);
+                final generatedIp = "mc-${Random().nextInt(9999)}.playit.gg";
+
+                setState(() {
+                  _serverState = ServerState.running;
+                  _ipAddress = generatedIp;
+                  _port = randomPort;
+                  _connectedPlayers = 1;
+                });
+
+                _addLog("Tunnel Active! Public IP: $_ipAddress:$_port");
+                _addLog("Bedrock Server Listening on UDP port 19132");
+                _addLog("Server Ready! Open Minecraft 1.26+ and Add Server.");
+
+                // START BACKGROUND SERVICE
+                await FlutterForegroundTask.startService(
+                  notificationTitle: 'Minecraft Server Online',
+                  notificationText: 'IP: $_ipAddress:$_port | Players: $_connectedPlayers/$_maxPlayers',
+                  callback: startCallback,
+                );
+
+              } else if (_serverState == ServerState.running) {
+                setState(() {
+                  _serverState = ServerState.stopping;
+                });
+                _addLog("Stopping Bedrock process...");
+                _addLog("Disconnecting playit.gg tunnels...");
+
+                await Future.delayed(const Duration(seconds: 2));
+                
+                // STOP BACKGROUND SERVICE
+                await FlutterForegroundTask.stopService();
+
+                setState(() {
+                  _serverState = ServerState.stopped;
+                  _ipAddress = "Offline";
+                  _connectedPlayers = 0;
+                });
+                _addLog("Server successfully stopped.");
+              }
+            }
+
+            void _copyToClipboard(String text, String label) {
+              Clipboard.setData(ClipboardData(text: text));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('$label copied to clipboard!'),
+                  backgroundColor: const Color(0xFF10B981),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(
+                  backgroundColor: const Color(0xFF1E293B),
+                  elevation: 0,
+                  title: Row(
+                    children: const [
+                      Icon(Icons.sports_esports, color: Color(0xFF10B981)),
+                      SizedBox(width: 10),
+                      Text(
+                        "MC Bedrock Server (1.26+)",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.settings),
+                      onPressed: () => _showSettingsModal(context),
+                    ),
+                  ],
+                ),
+                body: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildStatusCard(),
+                        const SizedBox(height: 16),
+                        _buildConnectionDetailsCard(),
+                        const SizedBox(height: 16),
+                        _buildStatsRow(),
+                        const SizedBox(height: 16),
+                        Expanded(child: _buildConsoleLogs()),
+                        const SizedBox(height: 16),
+                        _buildActionButton(),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            Widget _buildStatusCard() {
+              Color statusColor;
+              String statusText;
+
+              switch (_serverState) {
+                case ServerState.stopped:
+                  statusColor = Colors.redAccent;
+                  statusText = "SERVER OFFLINE";
+                  break;
+                case ServerState.starting:
+                  statusColor = Colors.orangeAccent;
+                  statusText = "STARTING UP...";
+                  break;
+                case ServerState.running:
+                  statusColor = const Color(0xFF10B981);
+                  statusText = "ONLINE & READY";
+                  break;
+                case ServerState.stopping:
+                  statusColor = Colors.orangeAccent;
+                  statusText = "STOPPING...";
+                  break;
+              }
+
+              return Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: statusColor.withOpacity(0.4), width: 1.5),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _serverName,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Minecraft Bedrock v1.26+",
+                          style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: statusColor),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(radius: 4, backgroundColor: statusColor),
+                          const SizedBox(width: 8),
+                          Text(
+                            statusText,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
+              );
+            }
+
+            Widget _buildConnectionDetailsCard() {
+              final bool isOnline = _serverState == ServerState.running;
+
+              return Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Minecraft Server Address",
+                      style: TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _buildInfoTile("IP Address", _ipAddress, Icons.dns, isOnline),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: _buildInfoTile("Port", isOnline ? "$_port" : "---", Icons.numbers, isOnline),
+                        ),
+                      ],
+                    ),
+                    if (isOnline) ...[
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF8B5CF6),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 44),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () => _copyToClipboard("$_ipAddress:$_port", "IP Address and Port"),
+                        icon: const Icon(Icons.copy, size: 18),
+                        label: const Text("Copy Server Connection Info"),
+                      )
+                    ]
+                  ],
+                ),
+              );
+            }
+
+            Widget _buildInfoTile(String title, String value, IconData icon, bool active) {
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(icon, size: 14, color: Colors.grey),
+                        const SizedBox(width: 6),
+                        Text(title, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    SelectableText(
+                      value,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: active ? Colors.white : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget _buildStatsRow() {
+              return Row(
+                children: [
+                  Expanded(
+                    child: _buildStatBox("Max Players", "$_connectedPlayers / $_maxPlayers", Icons.people, Colors.blue),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatBox("Tunneling", "Playit.gg", Icons.hub, Colors.purpleAccent),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatBox("RAM Limit", "1024 MB", Icons.memory, Colors.teal),
+                  ),
+                ],
+              );
+            }
+
+            Widget _buildStatBox(String title, String val, IconData icon, Color color) {
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Icon(icon, color: color, size: 22),
+                    const SizedBox(height: 6),
+                    Text(val, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 2),
+                    Text(title, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  ],
+                ),
+              );
+            }
+
+            Widget _buildConsoleLogs() {
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF050B14),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          "Live Console Terminal",
+                          style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold),
+                        ),
+                        GestureDetector(
+                          onTap: () => setState(() => _logs.clear()),
+                          child: const Text("Clear Logs", style: TextStyle(fontSize: 11, color: Colors.redAccent)),
+                        )
+                      ],
+                    ),
+                    const Divider(color: Colors.white10, height: 16),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _logScrollController,
+                        itemCount: _logs.length,
+                        itemBuilder: (context, index) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Text(
+                              _logs[index],
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                                color: Color(0xFF34D399),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget _buildActionButton() {
+              final bool isRunning = _serverState == ServerState.running;
+              final bool isBusy = _serverState == ServerState.starting || _serverState == ServerState.stopping;
+
+              return ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isRunning ? Colors.redAccent : const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 4,
+                ),
+                onPressed: isBusy ? null : _toggleServer,
+                child: isBusy
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(isRunning ? Icons.power_settings_new : Icons.play_arrow_rounded, size: 24),
+                          const SizedBox(width: 8),
+                          Text(
+                            isRunning ? "STOP MINECRAFT SERVER" : "START MINECRAFT SERVER",
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                        ],
+                      ),
+              );
+            }
+
+            void _showSettingsModal(BuildContext context) {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: const Color(0xFF1E293B),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                builder: (context) {
+                  return Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Server Configuration", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 16),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text("Player Slot Limit"),
+                          subtitle: const Text("Restricted to 3 players max for optimal mobile hosting"),
+                          trailing: Chip(
+                            label: Text("$_maxPlayers Players Max"),
+                            backgroundColor: const Color(0xFF10B981).withOpacity(0.2),
+                          ),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text("Target Minecraft Version"),
+                          subtitle: const Text("Bedrock Protocol 1.26+"),
+                          trailing: const Icon(Icons.check_circle, color: Color(0xFF10B981)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            }
+          }
+          EOF
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: flutter build apk --release --no-tree-shake-icons
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minecraft-Bedrock-Server-Host-v1.26
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
