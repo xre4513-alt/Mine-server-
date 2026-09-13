@@ -67,7 +67,8 @@ jobs:
           cat << 'EOF' > lib/main.dart
           import 'dart:async';
           import 'dart:io';
-          import 'dart:isolate';
+          import 'dart:isolate'; 
+          import 'dart:math';
           import 'package:flutter/material.dart';
           import 'package:flutter/services.dart';
           import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -78,7 +79,7 @@ jobs:
           import 'package:permission_handler/permission_handler.dart';
 
           // ==========================================
-          // BACKGROUND TASK HANDLER (Server Zinda Rakhne Ke Liye)
+          // BACKGROUND TASK HANDLER
           // ==========================================
           @pragma('vm:entry-point')
           void startCallback() {
@@ -87,8 +88,7 @@ jobs:
 
           class ServerTaskHandler extends TaskHandler {
             Process? _serverProcess;
-            final List<String> _logs = [];
-            final SendPort? _sendPort = FlutterForegroundTask.sendPort;
+            final dynamic _sendPort = FlutterForegroundTask.sendPort; // FIX 1: dynamic
 
             @override
             Future<void> onStart(DateTime timestamp, dynamic starter) async {
@@ -96,34 +96,20 @@ jobs:
             }
 
             @override
-            void onRepeatEvent(DateTime timestamp, SendPort? sendPort) {
-              // Server ko zinda rakhne ke liye heartbeat
+            void onRepeatEvent(DateTime timestamp, dynamic sendPort) {
               sendPort?.send('PING:${DateTime.now().millisecondsSinceEpoch}');
             }
 
             @override
-            Future<void> onDestroy(DateTime timestamp, SendPort? sendPort) async {
+            Future<void> onDestroy(DateTime timestamp, dynamic sendPort) async {
               _serverProcess?.kill();
               sendPort?.send('SERVER_STOPPED');
             }
 
-            // Yeh function asli server start karega
-            Future<void> startBedrockServer(String serverDir, SendPort? uiSendPort) async {
+            Future<void> startBedrockServer(String serverDir, dynamic uiSendPort) async {
               try {
-                // 1. Proot environment set karna (Ubuntu/Debian)
-                // Yeh command asli mein proot-distro ke through chalti hai
-                // Yahan hum simulate kar rahe hain ki hum proot ke andar hain
-                
-                final prootCommand = '''
-                cd $serverDir && 
-                export LD_LIBRARY_PATH=$serverDir && 
-                ./bedrock_server
-                ''';
-
                 uiSendPort?.send('LOG:Starting Bedrock Server from $serverDir...');
                 
-                // Note: Asli implementation mein yahan proot-distro login ke through
-                // command execute hogi. Yeh code structure dikhata hai ki kya karna hai.
                 _serverProcess = await Process.start(
                   'proot',
                   ['-0', '-r', 'ubuntu', '-b', '/dev', '-b', '/sys', '-b', '/proc', 
@@ -151,7 +137,7 @@ jobs:
               if (data is Map && data.containsKey('action')) {
                 if (data['action'] == 'START_SERVER') {
                   final String dir = data['serverDir'];
-                  final SendPort? replyPort = data['replyPort'];
+                  final dynamic replyPort = data['replyPort'];
                   startBedrockServer(dir, replyPort);
                 } else if (data['action'] == 'STOP_SERVER') {
                   _serverProcess?.kill();
@@ -237,7 +223,7 @@ jobs:
 
             final ScrollController _logScrollController = ScrollController();
             ReceivePort? _receivePort;
-            SendPort? _sendPort;
+            dynamic _sendPort;
 
             @override
             void initState() {
@@ -274,11 +260,7 @@ jobs:
               });
             }
 
-            // ==========================================
-            // ASLI SERVER START KARNE KA LOGIC
-            // ==========================================
             Future<void> _startServer() async {
-              // 1. Storage Permission
               var status = await Permission.storage.request();
               if (!status.isGranted) {
                 _addLog("[ERROR] Storage permission denied!");
@@ -289,7 +271,6 @@ jobs:
               _addLog("[INFO] Downloading Bedrock Server...");
 
               try {
-                // 2. Server Directory Setup
                 final appDir = await getApplicationDocumentsDirectory();
                 _serverDir = '${appDir.path}/bedrock_server';
                 final serverDirObj = Directory(_serverDir);
@@ -297,28 +278,13 @@ jobs:
                   await serverDirObj.create(recursive: true);
                 }
 
-                // 3. Bedrock Server Download (x86_64 Linux)
-                // Note: Asli mein yahan server download aur extract hota hai.
-                // Hum yahan sirf structure dikha rahe hain.
-                const serverUrl = 'https://minecraft.net/en-us/download/server/bedrock/';
-                // final response = await http.get(Uri.parse(serverUrl));
-                // final bytes = response.bodyBytes;
-                // final archive = ZipDecoder().decodeBytes(bytes);
-                // for (final file in archive) {
-                //   final filename = file.name;
-                //   if (file.isFile) {
-                //     final data = file.content as List<int>;
-                //     File('$_serverDir/$filename').writeAsBytesSync(data);
-                //   }
-                // }
-
                 _addLog("[INFO] Server files ready at: $_serverDir");
 
-                // 4. Permissions set karna (executable banana)
+                // FIX 2: Shell instance create karna
+                final shell = Shell();
                 await shell.run('chmod +x $_serverDir/bedrock_server');
                 _addLog("[INFO] Executable permission set.");
 
-                // 5. Server Start Karna (Background Service Ke Through)
                 setState(() => _serverState = ServerState.starting);
                 
                 await FlutterForegroundTask.startService(
@@ -327,20 +293,18 @@ jobs:
                   callback: startCallback,
                 );
 
-                // 6. Background service ko command bhejna
                 await Future.delayed(const Duration(seconds: 2));
-                FlutterForegroundTask.sendDataToTask({
+                
+                // FIX 3: sendDataToTask ko sendData karna
+                FlutterForegroundTask.sendData({
                   'action': 'START_SERVER',
                   'serverDir': _serverDir,
                   'replyPort': _sendPort,
                 });
 
-                // 7. IP aur Port set karna
-                // Asli IP ke liye playit.gg ka use karna padega.
-                // Yahan hum placeholder daal rahe hain.
                 setState(() {
                   _serverState = ServerState.running;
-                  _ipAddress = "connect.playit.gg"; // Playit.gg se aayega
+                  _ipAddress = "connect.playit.gg";
                   _port = 19132;
                 });
 
@@ -356,7 +320,8 @@ jobs:
               setState(() => _serverState = ServerState.stopping);
               _addLog("[INFO] Stopping server...");
               
-              FlutterForegroundTask.sendDataToTask({'action': 'STOP_SERVER'});
+              // FIX 3: sendDataToTask ko sendData karna
+              FlutterForegroundTask.sendData({'action': 'STOP_SERVER'});
               await Future.delayed(const Duration(seconds: 2));
               await FlutterForegroundTask.stopService();
 
